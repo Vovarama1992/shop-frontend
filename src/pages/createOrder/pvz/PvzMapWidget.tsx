@@ -8,6 +8,17 @@ import { InputLabel } from '@/widgets/InputLabel/InputLabel'
 import cdekIconUrl from '@/assets/images/marker.png'
 import { CgChevronRight } from 'react-icons/cg'
 
+function resolveCity(address?: Record<string, string>): string {
+  return (
+    address?.city ||
+    address?.town ||
+    address?.village ||
+    address?.municipality ||
+    address?.hamlet ||
+    ''
+  )
+}
+
 function RecenterMap({ center }: { center: [number, number] }) {
   const map = useMap()
 
@@ -81,7 +92,7 @@ export default function PvzMapWidget({
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ru`
       )
       const data = await response.json()
-      setCity(data.address.city || data.address.town || data.address.village || 'Город не найден')
+      setCity(resolveCity(data.address) || 'Город не найден')
     } catch (error) {
       console.error('Ошибка получения города:', error)
     }
@@ -144,7 +155,7 @@ export default function PvzMapWidget({
           const data = await response.json()
 
           return {
-            city: data.address.city || '',
+            city: resolveCity(data.address),
             fullAddress: data.display_name,
             lat: data.lat,
             lon: data.lon,
@@ -341,6 +352,7 @@ function AddressInput({
     fullAddress: addr,
     city: '',
   })
+  const [addressError, setAddressError] = useState('')
   const [latitude, setLatitude] = useState(55.625578)
   const [longitude, setLongitude] = useState(37.6063916)
   const [apartment, setApartment] = useState<string>('')
@@ -368,7 +380,7 @@ function AddressInput({
     timeoutRef.current = setTimeout(async () => {
       try {
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&accept-language=ru`
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(query)}&accept-language=ru`
         )
         const data = await response.json()
         setSuggestions(data)
@@ -382,6 +394,11 @@ function AddressInput({
     <form
       onSubmit={e => {
         e.preventDefault()
+        if (query.trim() !== address.fullAddress?.trim() || !address.city) {
+          setAddressError('Выберите адрес из подсказок, чтобы определить город.')
+          return
+        }
+        setAddressError('')
         onSelect({
           ...address,
           latitude,
@@ -403,6 +420,7 @@ function AddressInput({
         title="Адрес"
         required={true}
       />
+      {addressError && <p className="w-full text-sm text-red-600">{addressError}</p>}
       {suggestions.length > 0 && (
         <ul className="absolute md:max-h-[400px] overflow-auto bg-white border rounded w-full shadow-md top-[70px] z-10">
           {suggestions.map(suggestion => (
@@ -412,6 +430,7 @@ function AddressInput({
               onClick={async () => {
                 setQuery(suggestion.display_name)
                 setSuggestions([])
+                setAddressError('')
                 const fetchAddress = async (latitude: number, longitude: number) => {
                   try {
                     const response = await fetch(
@@ -420,7 +439,7 @@ function AddressInput({
                     const data = await response.json()
 
                     return {
-                      city: data.address.city || '',
+                      city: resolveCity(data.address),
                     }
                   } catch (error) {
                     console.error('Ошибка получения адреса:', error)
@@ -432,7 +451,9 @@ function AddressInput({
                   fullAddress: suggestion.display_name,
                   longitude: suggestion.lon,
                   latitude: suggestion.lat,
-                  city: (await fetchAddress(suggestion.lat, suggestion.lon))?.city || '',
+                  city:
+                    (await fetchAddress(suggestion.lat, suggestion.lon))?.city ||
+                    resolveCity(suggestion.address),
                 })
               }}
             >
